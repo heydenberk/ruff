@@ -765,10 +765,16 @@ impl<'db> Signature<'db> {
             return true;
         }
 
-        let expected_self_ty = first_parameter
-            .annotated_type()
-            .bind_self_typevars(db, self_type)
-            .apply_optional_specialization(db, self_type.class_specialization(db));
+        let annotated_self_ty = first_parameter.annotated_type();
+        let expected_self_ty = if annotated_self_ty.contains_self(db)
+            || annotated_self_ty.has_typevar_or_typevar_instance(db)
+        {
+            annotated_self_ty
+                .bind_self_typevars(db, self_type)
+                .apply_optional_specialization(db, self_type.class_specialization(db))
+        } else {
+            annotated_self_ty
+        };
 
         if expected_self_ty.is_unknown() {
             return true;

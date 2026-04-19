@@ -78,62 +78,41 @@ impl<'db> BoundMethodType<'db> {
     }
 
     pub(crate) fn bound_signatures(self, db: &'db dyn Db) -> CallableSignature<'db> {
-        let self_instance = self.typing_self_type(db);
+        let function_signature = self.function(db).signature(db);
+        let typing_self_type = self.typing_self_type(db);
+
+        if let Some(applicable_overload_indexes) = self.applicable_overload_indexes(db)
+            && !applicable_overload_indexes.is_empty()
+        {
+            return CallableSignature::from_overloads(applicable_overload_indexes.into_iter().map(
+                |index| function_signature.overloads[index].bind_self(db, Some(typing_self_type)),
+            ));
+        }
 
         CallableSignature::from_overloads(
-            self.retained_overloads_with_indexes(db)
-                .into_iter()
-                .map(|(_, signature)| signature.bind_self(db, Some(self_instance))),
+            function_signature
+                .overloads
+                .iter()
+                .map(|signature| signature.bind_self(db, Some(typing_self_type))),
         )
     }
 
-    /// Returns the overloads that remain candidates after receiver filtering.
-    ///
-    /// If receiver filtering would eliminate every overload, we fall back to the full overload set
-    /// so later diagnostics can still report the original invalid-`self` failure instead of
-    /// making the method appear non-callable.
-    #[salsa::tracked(heap_size=ruff_memory_usage::heap_size)]
-    pub(crate) fn retained_overloads_with_indexes(
-        self,
-        db: &'db dyn Db,
-    ) -> SmallVec<[(usize, Signature<'db>); 1]> {
-        let applicable_overloads = self.applicable_overloads_with_indexes(db);
-        if applicable_overloads.is_empty() {
-            return self
-                .function(db)
-                .signature(db)
-                .overloads
-                .iter()
-                .cloned()
-                .enumerate()
-                .collect();
-        }
-
-        applicable_overloads
-    }
-
-    pub(crate) fn applicable_overloads_with_indexes(
-        self,
-        db: &'db dyn Db,
-    ) -> SmallVec<[(usize, Signature<'db>); 1]> {
+    fn applicable_overload_indexes(self, db: &'db dyn Db) -> Option<SmallVec<[usize; 1]>> {
         let function_signature = self.function(db).signature(db);
         if !function_signature.has_receiver_sensitive_overloads() {
-            return function_signature
-                .overloads
-                .iter()
-                .cloned()
-                .enumerate()
-                .collect();
+            return None;
         }
 
         let self_instance = self.self_instance(db);
-        function_signature
-            .overloads
-            .iter()
-            .enumerate()
-            .filter(|(_, signature)| signature.can_bind_self_to(db, self_instance))
-            .map(|(index, signature)| (index, signature.clone()))
-            .collect()
+        Some(
+            function_signature
+                .overloads
+                .iter()
+                .enumerate()
+                .filter(|(_, signature)| signature.can_bind_self_to(db, self_instance))
+                .map(|(index, _)| index)
+                .collect(),
+        )
     }
 
     pub(super) fn recursive_type_normalized_impl(
