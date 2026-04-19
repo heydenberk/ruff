@@ -2619,6 +2619,29 @@ impl<'db> CallableBinding<'db> {
             .collect()
     }
 
+    fn receiver_filtered_overload_indexes(&self, db: &'db dyn Db) -> Option<SmallVec<[usize; 1]>> {
+        let Type::BoundMethod(bound_method) = self.signature_type else {
+            return None;
+        };
+
+        let retained = bound_method.retained_overloads_with_indexes(db);
+        (retained.len() < self.overloads.len()).then(|| {
+            retained
+                .into_iter()
+                .map(|(original_overload_index, _)| original_overload_index)
+                .collect()
+        })
+    }
+
+    fn restore_overload_snapshots(&mut self, snapshots: Vec<BindingSnapshot<'db>>) {
+        self.matching_overload_before_type_checking = None;
+        self.overload_call_return_type = None;
+
+        for (overload, snapshot) in self.overloads.iter_mut().zip(snapshots) {
+            overload.restore(snapshot);
+        }
+    }
+
     fn replace_callable_type(&mut self, before: Type<'db>, after: Type<'db>) {
         if self.callable_type == before {
             self.callable_type = after;
@@ -2717,6 +2740,41 @@ impl<'db> CallableBinding<'db> {
                 }
             };
 
+        let receiver_filtered_step_two_snapshots = (!should_retry_after_provisional_arity)
+            .then(|| {
+                let Some(receiver_filtered_overloads) = self.receiver_filtered_overload_indexes(db)
+                else {
+                    return None;
+                };
+
+                let retained_matching_overloads: SmallVec<[usize; 1]> = overloads_for_expansion
+                    .iter()
+                    .copied()
+                    .filter(|overload_index| receiver_filtered_overloads.contains(overload_index))
+                    .collect();
+
+                if retained_matching_overloads.is_empty()
+                    || retained_matching_overloads.len() == overloads_for_expansion.len()
+                {
+                    return None;
+                }
+
+                let overload_snapshots = self
+                    .overloads
+                    .iter()
+                    .map(Binding::snapshot)
+                    .collect::<Vec<_>>();
+
+                for overload_index in &overloads_for_expansion {
+                    if !retained_matching_overloads.contains(overload_index) {
+                        self.overloads[*overload_index].mark_as_unmatched_overload();
+                    }
+                }
+
+                Some(overload_snapshots)
+            })
+            .flatten();
+
         // Step 2: Evaluate each remaining overload as a regular (non-overloaded) call to determine
         // whether it is compatible with the supplied argument list.
         for (_, overload) in self.matching_overloads_mut() {
@@ -2733,6 +2791,27 @@ impl<'db> CallableBinding<'db> {
             matching_overload_index = ?self.matching_overload_index(),
             "after step 2",
         );
+
+        if let Some(receiver_filtered_step_two_snapshots) = receiver_filtered_step_two_snapshots
+            && matches!(self.matching_overload_index(), MatchingOverloadIndex::None)
+        {
+            self.restore_overload_snapshots(receiver_filtered_step_two_snapshots);
+
+            for (_, overload) in self.matching_overloads_mut() {
+                overload.check_types(
+                    db,
+                    constraints,
+                    call_arguments.as_ref(),
+                    call_expression_tcx,
+                );
+            }
+
+            tracing::trace!(
+                target: "ty_python_semantic::types::call::bind",
+                matching_overload_index = ?self.matching_overload_index(),
+                "after step 2 fallback",
+            );
+        }
 
         // If we are in the "retry for provisional arity" case, we have to try argument expansion
         // before deciding we are done or moving on to step 4+.

@@ -92,6 +92,7 @@ impl<'db> BoundMethodType<'db> {
     /// If receiver filtering would eliminate every overload, we fall back to the full overload set
     /// so later diagnostics can still report the original invalid-`self` failure instead of
     /// making the method appear non-callable.
+    #[salsa::tracked(heap_size=ruff_memory_usage::heap_size)]
     pub(crate) fn retained_overloads_with_indexes(
         self,
         db: &'db dyn Db,

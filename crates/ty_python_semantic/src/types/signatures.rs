@@ -711,17 +711,20 @@ impl<'db> Signature<'db> {
 
     pub(crate) fn bind_self(&self, db: &'db dyn Db, self_type: Option<Type<'db>>) -> Self {
         let mut parameters = self.parameters.iter().cloned().peekable();
+        let removed_receiver = parameters.peek().is_some_and(Parameter::is_positional);
 
         // TODO: Theoretically, for a signature like `f(*args: *tuple[MyClass, int, *tuple[str, ...]])` with
         // a variadic first parameter, we should also "skip the first parameter" by modifying the tuple type.
-        if parameters.peek().is_some_and(Parameter::is_positional) {
+        if removed_receiver {
             parameters.next();
         }
 
         let mut parameters = Parameters::new(db, parameters);
         let mut return_ty = self.return_ty;
         let binding_context = self.definition.map(BindingContext::Definition);
-        if let Some(self_type) = self_type {
+        if let Some(self_type) = self_type
+            && self.needs_self_mapping(db, removed_receiver)
+        {
             let self_mapping =
                 TypeMapping::BindSelf(SelfBinding::new(db, self_type, binding_context));
             parameters = parameters.apply_type_mapping_impl(
@@ -789,6 +792,10 @@ impl<'db> Signature<'db> {
     }
 
     pub(crate) fn apply_self(&self, db: &'db dyn Db, self_type: Type<'db>) -> Self {
+        if !self.needs_self_mapping(db, false) {
+            return self.clone();
+        }
+
         let self_mapping = TypeMapping::BindSelf(SelfBinding::new(
             db,
             self_type,
@@ -809,6 +816,17 @@ impl<'db> Signature<'db> {
             parameters,
             return_ty,
         }
+    }
+
+    fn needs_self_mapping(&self, db: &'db dyn Db, receiver_is_removed: bool) -> bool {
+        self.generic_context.is_some()
+            || self.return_ty.contains_self(db)
+            || self
+                .parameters
+                .iter()
+                .enumerate()
+                .skip(usize::from(receiver_is_removed))
+                .any(|(_, parameter)| parameter.annotated_type().contains_self(db))
     }
 
     fn inferable_typevars(&self, db: &'db dyn Db) -> InferableTypeVars<'db> {
