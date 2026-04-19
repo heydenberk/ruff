@@ -3773,12 +3773,12 @@ impl<'db> Type<'db> {
                 }
             }
 
-            Type::BoundMethod(bound_method) => {
-                let signature = bound_method.function(db).signature(db);
-                CallableBinding::from_overloads(self, signature.overloads.iter().cloned())
-                    .with_bound_type(bound_method.self_instance(db))
-                    .into()
-            }
+            Type::BoundMethod(bound_method) => CallableBinding::from_indexed_overloads(
+                self,
+                bound_method.retained_overloads_with_indexes(db),
+            )
+            .with_bound_type(bound_method.self_instance(db))
+            .into(),
 
             Type::KnownBoundMethod(method) => {
                 CallableBinding::from_overloads(self, method.signatures(db)).into()

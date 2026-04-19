@@ -2612,22 +2612,7 @@ impl<'db> CallableBinding<'db> {
     }
 
     /// Returns the overload indexes that should be shown in diagnostics.
-    ///
-    /// For bound methods, this prefers the subset whose `self` parameter can accept the bound
-    /// receiver. If no overload accepts the bound receiver, it falls back to all retained
-    /// overloads so invalid-`self` diagnostics still report the original callable accurately.
-    fn diagnostic_overload_indexes(&self, db: &'db dyn Db) -> SmallVec<[usize; 1]> {
-        if let Type::BoundMethod(bound_method) = self.signature_type {
-            let applicable_indexes: SmallVec<[usize; 1]> = bound_method
-                .applicable_overloads_with_indexes(db)
-                .into_iter()
-                .map(|(index, _)| index)
-                .collect();
-            if !applicable_indexes.is_empty() {
-                return applicable_indexes;
-            }
-        }
-
+    fn diagnostic_overload_indexes(&self) -> SmallVec<[usize; 1]> {
         self.overloads
             .iter()
             .map(Binding::original_overload_index)
@@ -3482,7 +3467,7 @@ impl<'db> CallableBinding<'db> {
                                 .original_overload_index(),
                             kind,
                             function,
-                            candidate_indexes: self.diagnostic_overload_indexes(context.db()),
+                            candidate_indexes: self.diagnostic_overload_indexes(),
                         });
                     self.overloads[matching_overload_index].report_diagnostics(
                         context,
@@ -3509,7 +3494,7 @@ impl<'db> CallableBinding<'db> {
                                 .original_overload_index(),
                             kind,
                             function,
-                            candidate_indexes: self.diagnostic_overload_indexes(context.db()),
+                            candidate_indexes: self.diagnostic_overload_indexes(),
                         });
                     self.overloads[matching_overload_index].report_diagnostics(
                         context,
@@ -3554,8 +3539,7 @@ impl<'db> CallableBinding<'db> {
                 if let Some((kind, function)) = function_type_and_kind {
                     let (overloads, implementation) =
                         function.overloads_and_implementation(context.db());
-                    let diagnostic_overload_indexes =
-                        self.diagnostic_overload_indexes(context.db());
+                    let diagnostic_overload_indexes = self.diagnostic_overload_indexes();
                     let possible_overloads = diagnostic_overload_indexes
                         .iter()
                         .filter_map(|&index| overloads.get(index).copied())
