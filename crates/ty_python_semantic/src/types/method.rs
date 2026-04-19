@@ -1,6 +1,5 @@
 use itertools::Either;
 use ruff_python_ast::name::Name;
-use smallvec::SmallVec;
 
 use crate::{
     Db,
@@ -78,41 +77,31 @@ impl<'db> BoundMethodType<'db> {
     }
 
     pub(crate) fn bound_signatures(self, db: &'db dyn Db) -> CallableSignature<'db> {
-        let function_signature = self.function(db).signature(db);
+        let self_instance = self.self_instance(db);
         let typing_self_type = self.typing_self_type(db);
 
-        if let Some(applicable_overload_indexes) = self.applicable_overload_indexes(db)
-            && !applicable_overload_indexes.is_empty()
-        {
-            return CallableSignature::from_overloads(applicable_overload_indexes.into_iter().map(
-                |index| function_signature.overloads[index].bind_self(db, Some(typing_self_type)),
-            ));
+        let mut applicable_overloads = self
+            .function(db)
+            .signature(db)
+            .overloads
+            .iter()
+            .filter(|signature| signature.can_bind_self_to(db, self_instance))
+            .map(|signature| signature.bind_self(db, Some(typing_self_type)))
+            .peekable();
+
+        // If no overload accepts the bound receiver, keep the full overload set so a later call
+        // still reports the existing invalid-`self` diagnostic instead of becoming non-callable.
+        if applicable_overloads.peek().is_none() {
+            let function_signature = self.function(db).signature(db);
+            CallableSignature::from_overloads(
+                function_signature
+                    .overloads
+                    .iter()
+                    .map(|signature| signature.bind_self(db, Some(typing_self_type))),
+            )
+        } else {
+            CallableSignature::from_overloads(applicable_overloads)
         }
-
-        CallableSignature::from_overloads(
-            function_signature
-                .overloads
-                .iter()
-                .map(|signature| signature.bind_self(db, Some(typing_self_type))),
-        )
-    }
-
-    fn applicable_overload_indexes(self, db: &'db dyn Db) -> Option<SmallVec<[usize; 1]>> {
-        let function_signature = self.function(db).signature(db);
-        if !function_signature.has_receiver_sensitive_overloads() {
-            return None;
-        }
-
-        let self_instance = self.self_instance(db);
-        Some(
-            function_signature
-                .overloads
-                .iter()
-                .enumerate()
-                .filter(|(_, signature)| signature.can_bind_self_to(db, self_instance))
-                .map(|(index, _)| index)
-                .collect(),
-        )
     }
 
     pub(super) fn recursive_type_normalized_impl(

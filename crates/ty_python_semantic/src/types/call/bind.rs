@@ -2569,9 +2569,9 @@ impl<'db> CallableBinding<'db> {
     ) -> Self {
         let overloads = overloads
             .into_iter()
-            .map(|(original_overload_index, signature)| {
+            .map(|(source_overload_index, signature)| {
                 Binding::single(signature_type, signature)
-                    .with_original_overload_index(original_overload_index)
+                    .with_source_overload_index(source_overload_index)
             })
             .collect();
         Self {
@@ -2615,7 +2615,7 @@ impl<'db> CallableBinding<'db> {
     fn diagnostic_overload_indexes(&self) -> SmallVec<[usize; 1]> {
         self.overloads
             .iter()
-            .map(Binding::original_overload_index)
+            .map(Binding::source_overload_index)
             .collect()
     }
 
@@ -3463,8 +3463,7 @@ impl<'db> CallableBinding<'db> {
                         CallableDescription::new(context.db(), self.signature_type);
                     let matching_overload =
                         function_type_and_kind.map(|(kind, function)| MatchingOverloadLiteral {
-                            index: self.overloads[matching_overload_index]
-                                .original_overload_index(),
+                            index: self.overloads[matching_overload_index].source_overload_index(),
                             kind,
                             function,
                             candidate_indexes: self.diagnostic_overload_indexes(),
@@ -3490,8 +3489,7 @@ impl<'db> CallableBinding<'db> {
                         CallableDescription::new(context.db(), self.signature_type);
                     let matching_overload =
                         function_type_and_kind.map(|(kind, function)| MatchingOverloadLiteral {
-                            index: self.overloads[matching_overload_index]
-                                .original_overload_index(),
+                            index: self.overloads[matching_overload_index].source_overload_index(),
                             kind,
                             function,
                             candidate_indexes: self.diagnostic_overload_indexes(),
@@ -5043,8 +5041,8 @@ pub(crate) struct Binding<'db> {
     ///
     /// For example, if a function defines overloads at indexes `0`, `1`, and `2`, and we later
     /// filter a bound method down to only the last two overloads, those bindings still store `1`
-    /// and `2` here so diagnostics can point at the original declarations.
-    original_overload_index: usize,
+    /// and `2` here so diagnostics can point at the source declarations.
+    source_overload_index: usize,
 
     /// The type that is (hopefully) callable.
     pub(crate) callable_type: Type<'db>,
@@ -5087,7 +5085,7 @@ impl<'db> Binding<'db> {
         let return_ty = signature.return_ty;
         Binding {
             signature,
-            original_overload_index: 0,
+            source_overload_index: 0,
             callable_type: signature_type,
             signature_type,
             return_ty,
@@ -5101,15 +5099,15 @@ impl<'db> Binding<'db> {
         }
     }
 
-    /// Records the overload's original definition index for later diagnostics.
-    fn with_original_overload_index(mut self, original_overload_index: usize) -> Self {
-        self.original_overload_index = original_overload_index;
+    /// Records the overload's source definition index for later diagnostics.
+    fn with_source_overload_index(mut self, source_overload_index: usize) -> Self {
+        self.source_overload_index = source_overload_index;
         self
     }
 
-    /// Returns the overload's original position in the defining function's overload list.
-    fn original_overload_index(&self) -> usize {
-        self.original_overload_index
+    /// Returns the overload's source position in the defining function's overload list.
+    fn source_overload_index(&self) -> usize {
+        self.source_overload_index
     }
 
     fn replace_callable_type(&mut self, before: Type<'db>, after: Type<'db>) {
@@ -6418,7 +6416,7 @@ impl CompoundDiagnostic for LayeredDiagnostic<'_, '_> {
 struct MatchingOverloadLiteral<'db> {
     /// The position of the matching overload in the list of overloads.
     index: usize,
-    /// The original overload positions that remained after any callable-specific filtering.
+    /// The source overload positions that remained after any callable-specific filtering.
     candidate_indexes: SmallVec<[usize; 1]>,
     /// The kind of function this overload is for.
     kind: FunctionKind,
@@ -6443,7 +6441,7 @@ impl<'db> MatchingOverloadLiteral<'db> {
     }
 
     /// Iterates the overload literals that remain diagnostic candidates, paired with their
-    /// original overload-definition index.
+    /// source overload-definition index.
     fn candidate_overloads(
         &self,
         db: &'db dyn Db,

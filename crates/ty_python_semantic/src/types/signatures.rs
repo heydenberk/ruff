@@ -29,8 +29,8 @@ use crate::types::relation::{
 use crate::types::{
     ApplyTypeMappingVisitor, BindingContext, BoundTypeVarInstance, CallableType, ErrorContext,
     FindLegacyTypeVarsVisitor, KnownClass, MaterializationKind, ParamSpecAttrKind,
-    ParameterDescription, SelfBinding, SubclassOfInner, TypeContext, TypeMapping, UnionBuilder,
-    VarianceInferable, infer_complete_scope_types, todo_type,
+    ParameterDescription, SelfBinding, TypeContext, TypeMapping, UnionBuilder, VarianceInferable,
+    infer_complete_scope_types, todo_type,
 };
 use crate::{Db, FxOrderSet};
 use ruff_python_ast::{self as ast, name::Name};
@@ -299,20 +299,6 @@ impl<'db> CallableSignature<'db> {
                 .map(|signature| signature.bind_self(db, self_type))
                 .collect(),
         }
-    }
-
-    /// Returns `true` if binding a concrete receiver could change which overloads remain
-    /// applicable.
-    ///
-    /// When every overload has the same receiver annotation (or they are all unannotated),
-    /// receiver-based pruning cannot affect the overload set, so we can skip the more expensive
-    /// relation checks during bound-method conversion.
-    pub(crate) fn has_receiver_sensitive_overloads(&self) -> bool {
-        let mut receiver_annotations = self.overloads.iter().map(Signature::receiver_annotation);
-        let Some(first_annotation) = receiver_annotations.next() else {
-            return false;
-        };
-        receiver_annotations.any(|annotation| annotation != first_annotation)
     }
 
     /// Replaces any occurrences of `typing.Self` in the parameter and return annotations with the
@@ -745,18 +731,15 @@ impl<'db> Signature<'db> {
         }
     }
 
-    fn receiver_annotation(&self) -> Option<Type<'db>> {
-        let first_parameter = self.parameters.get(0)?;
-        first_parameter
-            .is_positional()
-            .then(|| first_parameter.annotated_type())
-    }
-
     /// Returns `true` if this signature's first parameter can accept the bound `self` type.
     ///
     /// This is used to prune impossible overloads when a method is bound to a concrete receiver.
     /// If a signature has no positional first parameter, we conservatively keep it.
     pub(crate) fn can_bind_self_to(&self, db: &'db dyn Db, self_type: Type<'db>) -> bool {
+        if self_type.is_dynamic() {
+            return true;
+        }
+
         let Some(first_parameter) = self.parameters.get(0) else {
             return true;
         };
@@ -765,35 +748,26 @@ impl<'db> Signature<'db> {
             return true;
         }
 
-        let annotated_self_ty = first_parameter.annotated_type();
-        let expected_self_ty = if annotated_self_ty.contains_self(db)
-            || annotated_self_ty.has_typevar_or_typevar_instance(db)
-        {
-            annotated_self_ty
-                .bind_self_typevars(db, self_type)
-                .apply_optional_specialization(db, self_type.class_specialization(db))
-        } else {
-            annotated_self_ty
-        };
+        let expected_self_ty = first_parameter
+            .annotated_type()
+            .bind_self_typevars(db, self_type)
+            .apply_optional_specialization(db, self_type.class_specialization(db));
 
-        if expected_self_ty.is_unknown() {
+        if expected_self_ty.is_dynamic()
+            || expected_self_ty.is_object()
+            || expected_self_ty == self_type
+        {
             return true;
         }
 
-        if let Some(can_bind) =
-            can_bind_self_to_concrete_receiver_fast_path(db, self_type, expected_self_ty)
-        {
-            return can_bind;
-        }
-
         let constraints = ConstraintSetBuilder::new();
-        let inferable_typevars = if expected_self_ty.has_typevar_or_typevar_instance(db) {
-            self.inferable_typevars(db)
-        } else {
-            InferableTypeVars::None
-        };
         self_type
-            .when_assignable_to(db, expected_self_ty, &constraints, inferable_typevars)
+            .when_assignable_to(
+                db,
+                expected_self_ty,
+                &constraints,
+                self.inferable_typevars(db),
+            )
             .is_always_satisfied(db)
     }
 
@@ -825,8 +799,7 @@ impl<'db> Signature<'db> {
     }
 
     fn needs_self_mapping(&self, db: &'db dyn Db, receiver_is_removed: bool) -> bool {
-        self.generic_context.is_some()
-            || self.return_ty.contains_self(db)
+        self.return_ty.contains_self(db)
             || self
                 .parameters
                 .iter()
@@ -918,58 +891,6 @@ impl<'db> Signature<'db> {
     /// Create a new signature with the given return type.
     pub(crate) fn with_return_type(self, return_ty: Type<'db>) -> Self {
         Self { return_ty, ..self }
-    }
-}
-
-fn can_bind_self_to_concrete_receiver_fast_path<'db>(
-    db: &'db dyn Db,
-    self_type: Type<'db>,
-    expected_self_ty: Type<'db>,
-) -> Option<bool> {
-    if self_type.has_dynamic(db)
-        || self_type.has_typevar_or_typevar_instance(db)
-        || expected_self_ty.has_dynamic(db)
-        || expected_self_ty.has_typevar_or_typevar_instance(db)
-    {
-        return None;
-    }
-
-    if let (Some(actual_class), Some(expected_class)) = (
-        self_type.nominal_class(db),
-        expected_self_ty.nominal_class(db),
-    ) {
-        return Some(actual_class.is_subclass_of(db, expected_class));
-    }
-
-    let actual_subclass = match self_type {
-        Type::ClassLiteral(_) | Type::GenericAlias(_) => {
-            match super::SubclassOfType::try_from_type(db, self_type) {
-                Some(Type::SubclassOf(subclass_of)) => Some(subclass_of),
-                _ => None,
-            }
-        }
-        Type::SubclassOf(subclass_of) => Some(subclass_of),
-        _ => None,
-    }?;
-    let expected_subclass = match expected_self_ty {
-        Type::ClassLiteral(_) | Type::GenericAlias(_) => {
-            match super::SubclassOfType::try_from_type(db, expected_self_ty) {
-                Some(Type::SubclassOf(subclass_of)) => Some(subclass_of),
-                _ => None,
-            }
-        }
-        Type::SubclassOf(subclass_of) => Some(subclass_of),
-        _ => None,
-    }?;
-
-    match (
-        actual_subclass.subclass_of(),
-        expected_subclass.subclass_of(),
-    ) {
-        (SubclassOfInner::Class(actual_class), SubclassOfInner::Class(expected_class)) => {
-            Some(actual_class.is_subclass_of(db, expected_class))
-        }
-        _ => None,
     }
 }
 
