@@ -213,6 +213,15 @@ pub(crate) fn statement(stmt: &Stmt, checker: &mut Checker) {
                     checker.settings().mccabe.max_complexity,
                 );
             }
+            if checker.is_rule_enabled(Rule::HighCognitiveComplexity) {
+                mccabe::rules::function_is_too_cognitively_complex(
+                    checker,
+                    stmt,
+                    name,
+                    body,
+                    checker.settings().mccabe.max_cognitive_complexity,
+                );
+            }
             if checker.is_rule_enabled(Rule::HardcodedPasswordDefault) {
                 flake8_bandit::rules::hardcoded_password_default(checker, parameters);
             }

@@ -1,0 +1,22 @@
+---
+source: crates/ruff_linter/src/rules/mccabe/mod.rs
+---
+C902 `nested_ifs` is too cognitively complex (6 > 5)
+  --> C902.py:14:5
+   |
+13 | ### Nested ifs — complexity 6
+14 | def nested_ifs(x, y, z):
+   |     ^^^^^^^^^^
+15 |     if x:  # +1
+16 |         if y:  # +2 (nested)
+   |
+
+C902 `deeply_nested` is too cognitively complex (19 > 5)
+   --> C902.py:109:5
+    |
+108 | ### Deeply nested composite — above default threshold
+109 | def deeply_nested(items, flag):
+    |     ^^^^^^^^^^^^^
+110 |     total = 0
+111 |     for item in items:  # +1 (nest 0)
+    |

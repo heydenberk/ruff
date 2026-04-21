@@ -1,0 +1,151 @@
+---
+source: crates/ruff_linter/src/rules/mccabe/mod.rs
+---
+C902 `single_if` is too cognitively complex (1 > 0)
+ --> C902.py:7:5
+  |
+6 | ### Single if — complexity 1
+7 | def single_if(x):
+  |     ^^^^^^^^^
+8 |     if x:
+9 |         return 1
+  |
+
+C902 `nested_ifs` is too cognitively complex (6 > 0)
+  --> C902.py:14:5
+   |
+13 | ### Nested ifs — complexity 6
+14 | def nested_ifs(x, y, z):
+   |     ^^^^^^^^^^
+15 |     if x:  # +1
+16 |         if y:  # +2 (nested)
+   |
+
+C902 `flat_if_chain` is too cognitively complex (3 > 0)
+  --> C902.py:23:5
+   |
+22 | ### Flat if chain — complexity 3
+23 | def flat_if_chain(x, y, z):
+   |     ^^^^^^^^^^^^^
+24 |     if x:  # +1
+25 |         return 1
+   |
+
+C902 `bool_single_run` is too cognitively complex (1 > 0)
+  --> C902.py:34:5
+   |
+33 | ### Boolean-op single run — complexity 1
+34 | def bool_single_run(a, b, c, d):
+   |     ^^^^^^^^^^^^^^^
+35 |     return a and b and c and d
+   |
+
+C902 `bool_mixed` is too cognitively complex (3 > 0)
+  --> C902.py:39:5
+   |
+38 | ### Boolean-op mixed — complexity 3
+39 | def bool_mixed(a, b, c, d):
+   |     ^^^^^^^^^^
+40 |     # (a and b) or (c and d): outer or +1, two inner ands +1 each
+41 |     return a and b or c and d
+   |
+
+C902 `ternary_chain` is too cognitively complex (3 > 0)
+  --> C902.py:45:5
+   |
+44 | ### Ternary chain — complexity 3
+45 | def ternary_chain(a, b, c, d):
+   |     ^^^^^^^^^^^^^
+46 |     return a if a else (b if b else (c if c else d))
+   |
+
+C902 `ternary_inside_if` is too cognitively complex (3 > 0)
+  --> C902.py:50:5
+   |
+49 | ### Ternary inside if — complexity 3
+50 | def ternary_inside_if(x, a, b):
+   |     ^^^^^^^^^^^^^^^^^
+51 |     if x:  # +1
+52 |         # ternary at nesting 1: +1+1
+   |
+
+C902 `dict_ternaries` is too cognitively complex (2 > 0)
+  --> C902.py:58:5
+   |
+57 | ### Dict literal with ternaries — complexity 2
+58 | def dict_ternaries(a, b):
+   |     ^^^^^^^^^^^^^^
+59 |     return {"x": a if a else None, "y": b if b else None}
+   |
+
+C902 `try_except_else_finally` is too cognitively complex (1 > 0)
+  --> C902.py:63:5
+   |
+62 | ### Try / except / else / finally — complexity 1
+63 | def try_except_else_finally():
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+64 |     try:
+65 |         print(1)
+   |
+
+C902 `match_simple` is too cognitively complex (2 > 0)
+  --> C902.py:75:5
+   |
+74 | ### Match — only case bodies count — complexity 2
+75 | def match_simple(x):
+   |     ^^^^^^^^^^^^
+76 |     match x:
+77 |         case 1:
+   |
+
+C902 `listcomp_filter` is too cognitively complex (2 > 0)
+  --> C902.py:85:5
+   |
+84 | ### List comp with filter — complexity 2
+85 | def listcomp_filter(xs):
+   |     ^^^^^^^^^^^^^^^
+86 |     return [x for x in xs if x]  # comp +1, filter +1
+   |
+
+C902 `inner` is too cognitively complex (1 > 0)
+  --> C902.py:91:9
+   |
+89 | ### Nested def contributes nothing to parent — complexity 0
+90 | def outer_with_nested(x):
+91 |     def inner(y):
+   |         ^^^^^
+92 |         if y:
+93 |             return y
+   |
+
+C902 `for_else` is too cognitively complex (1 > 0)
+   --> C902.py:101:5
+    |
+ 99 | # Only the `for` itself adds 1; the `else` body adds nothing here, since the
+100 | # print call contains no boolean ops or control flow.
+101 | def for_else(xs):
+    |     ^^^^^^^^
+102 |     for x in xs:  # +1
+103 |         print(x)
+    |
+
+C902 `deeply_nested` is too cognitively complex (19 > 0)
+   --> C902.py:109:5
+    |
+108 | ### Deeply nested composite — above default threshold
+109 | def deeply_nested(items, flag):
+    |     ^^^^^^^^^^^^^
+110 |     total = 0
+111 |     for item in items:  # +1 (nest 0)
+    |
+
+C902 `process` is too cognitively complex (3 > 0)
+   --> C902.py:126:9
+    |
+124 | ### Method on a class — methods are functions too
+125 | class Payments:
+126 |     def process(self, items):
+    |         ^^^^^^^
+127 |         for item in items:  # +1
+128 |             if item.ok:  # +2 (nested)
+    |

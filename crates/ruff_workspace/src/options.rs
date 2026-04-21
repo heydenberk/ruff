@@ -3101,6 +3101,24 @@ pub struct McCabeOptions {
         "#
     )]
     pub max_complexity: Option<usize>,
+
+    /// The maximum cognitive complexity to allow before triggering `C902` errors.
+    ///
+    /// Cognitive complexity follows [Sonar's metric][sonar] and matches the
+    /// scoring of [complexipy][complexipy]: it adds cost for nesting, ignores
+    /// extra branches in flat sequences, and collapses boolean-operator runs.
+    ///
+    /// [sonar]: https://www.sonarsource.com/resources/cognitive-complexity/
+    /// [complexipy]: https://github.com/rohaquinlop/complexipy
+    #[option(
+        default = "15",
+        value_type = "int",
+        example = r#"
+            # Flag errors (`C902`) whenever the cognitive complexity exceeds 10.
+            max-cognitive-complexity = 10
+        "#
+    )]
+    pub max_cognitive_complexity: Option<usize>,
 }
 
 impl McCabeOptions {
@@ -3109,6 +3127,9 @@ impl McCabeOptions {
             max_complexity: self
                 .max_complexity
                 .unwrap_or(mccabe::settings::DEFAULT_MAX_COMPLEXITY),
+            max_cognitive_complexity: self
+                .max_cognitive_complexity
+                .unwrap_or(mccabe::settings::DEFAULT_MAX_COGNITIVE_COMPLEXITY),
         }
     }
 }

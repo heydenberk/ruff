@@ -2655,6 +2655,15 @@
       "description": "Options for the `mccabe` plugin.",
       "type": "object",
       "properties": {
+        "max-cognitive-complexity": {
+          "description": "The maximum cognitive complexity to allow before triggering `C902` errors.\n\nCognitive complexity follows [Sonar's metric][sonar] and matches the\nscoring of [complexipy][complexipy]: it adds cost for nesting, ignores\nextra branches in flat sequences, and collapses boolean-operator runs.\n\n[sonar]: https://www.sonarsource.com/resources/cognitive-complexity/\n[complexipy]: https://github.com/rohaquinlop/complexipy",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
         "max-complexity": {
           "description": "The maximum McCabe complexity to allow before triggering `C901` errors.",
           "type": [
@@ -3270,6 +3279,7 @@
         "C9",
         "C90",
         "C901",
+        "C902",
         "COM",
         "COM8",
         "COM81",

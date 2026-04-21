@@ -1,0 +1,12 @@
+---
+source: crates/ruff_linter/src/rules/mccabe/mod.rs
+---
+C902 `deeply_nested` is too cognitively complex (19 > 15)
+   --> C902.py:109:5
+    |
+108 | ### Deeply nested composite — above default threshold
+109 | def deeply_nested(items, flag):
+    |     ^^^^^^^^^^^^^
+110 |     total = 0
+111 |     for item in items:  # +1 (nest 0)
+    |

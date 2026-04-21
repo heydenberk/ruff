@@ -22,8 +22,30 @@ mod tests {
         let diagnostics = test_path(
             Path::new("mccabe/C901.py"),
             &LinterSettings {
-                mccabe: super::settings::Settings { max_complexity },
+                mccabe: super::settings::Settings {
+                    max_complexity,
+                    ..super::settings::Settings::default()
+                },
                 ..LinterSettings::for_rules(vec![Rule::ComplexStructure])
+            },
+        )?;
+        assert_diagnostics!(snapshot, diagnostics);
+        Ok(())
+    }
+
+    #[test_case(0)]
+    #[test_case(5)]
+    #[test_case(15)]
+    fn max_cognitive_complexity(max_cognitive_complexity: usize) -> Result<()> {
+        let snapshot = format!("max_cognitive_complexity_{max_cognitive_complexity}");
+        let diagnostics = test_path(
+            Path::new("mccabe/C902.py"),
+            &LinterSettings {
+                mccabe: super::settings::Settings {
+                    max_cognitive_complexity,
+                    ..super::settings::Settings::default()
+                },
+                ..LinterSettings::for_rules(vec![Rule::HighCognitiveComplexity])
             },
         )?;
         assert_diagnostics!(snapshot, diagnostics);

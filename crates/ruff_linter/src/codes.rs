@@ -431,6 +431,7 @@ pub fn code_to_rule(linter: Linter, code: &str) -> Option<(RuleGroup, Rule)> {
 
         // mccabe
         (McCabe, "1") => rules::mccabe::rules::ComplexStructure,
+        (McCabe, "2") => rules::mccabe::rules::HighCognitiveComplexity,
 
         // flake8-tidy-imports
         (Flake8TidyImports, "251") => rules::flake8_tidy_imports::rules::BannedApi,
