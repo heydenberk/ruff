@@ -474,7 +474,7 @@ impl Configuration {
                 isort,
                 mccabe: lint
                     .mccabe
-                    .map(McCabeOptions::into_settings)
+                    .map(|options| options.into_settings(lint_preview))
                     .unwrap_or_default(),
                 pep8_naming: lint
                     .pep8_naming

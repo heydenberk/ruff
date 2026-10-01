@@ -15,6 +15,7 @@ use ruff_graph::Direction;
 use ruff_linter::RUFF_PKG_VERSION;
 
 use ruff_linter::line_width::{IndentWidth, LineLength};
+use ruff_linter::preview::is_cognitive_complexity_metric_enabled;
 use ruff_linter::rules::flake8_import_conventions::settings::BannedAliases;
 use ruff_linter::rules::flake8_pytest_style::settings::SettingsError;
 use ruff_linter::rules::flake8_pytest_style::types;
@@ -24,6 +25,7 @@ use ruff_linter::rules::flake8_tidy_imports::settings::{
 };
 use ruff_linter::rules::isort::settings::RelativeImportsOrder;
 use ruff_linter::rules::isort::{ImportSection, ImportType};
+use ruff_linter::rules::mccabe::settings::ComplexityMetric;
 use ruff_linter::rules::pep8_naming::settings::IgnoreNames;
 use ruff_linter::rules::pydocstyle::settings::Convention;
 use ruff_linter::rules::pylint::settings::ConstantType;
@@ -3190,7 +3192,10 @@ impl IsortOptions {
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct McCabeOptions {
-    /// The maximum McCabe complexity to allow before triggering `C901` errors.
+    /// The maximum complexity to allow before triggering `C901` errors.
+    ///
+    /// If unset, defaults to 10 for cyclomatic complexity and 15 for cognitive complexity
+    /// (see [`metric`](#lint_mccabe_metric)).
     #[option(
         default = "10",
         value_type = "int",
@@ -3200,14 +3205,47 @@ pub struct McCabeOptions {
         "#
     )]
     max_complexity: Option<usize>,
+
+    /// The complexity metric that `C901` measures.
+    ///
+    /// - `"cyclomatic"`: McCabe cyclomatic complexity, which counts the independent paths
+    ///   through a function.
+    /// - `"cognitive"`: cognitive complexity as defined by SonarSource, which weighs nested
+    ///   control flow more heavily than flat control flow.
+    ///
+    /// The `"cognitive"` metric is in [preview](https://docs.astral.sh/ruff/preview/) and only
+    /// takes effect when preview mode is enabled. Otherwise, `C901` measures cyclomatic
+    /// complexity and Ruff emits a warning.
+    #[option(
+        default = r#""cyclomatic""#,
+        value_type = r#""cyclomatic" | "cognitive""#,
+        example = r#"
+            # Measure cognitive complexity instead of cyclomatic complexity.
+            metric = "cognitive"
+        "#
+    )]
+    metric: Option<ComplexityMetric>,
 }
 
 impl McCabeOptions {
-    pub(crate) fn into_settings(self) -> mccabe::settings::Settings {
+    pub(crate) fn into_settings(self, preview: PreviewMode) -> mccabe::settings::Settings {
+        let metric = match self.metric.unwrap_or_default() {
+            ComplexityMetric::Cognitive if is_cognitive_complexity_metric_enabled(preview) => {
+                ComplexityMetric::Cognitive
+            }
+            ComplexityMetric::Cognitive => {
+                warn_user_once!(
+                    "`lint.mccabe.metric = \"cognitive\"` has no effect because preview is not enabled."
+                );
+                ComplexityMetric::Cyclomatic
+            }
+            ComplexityMetric::Cyclomatic => ComplexityMetric::Cyclomatic,
+        };
         mccabe::settings::Settings {
             max_complexity: self
                 .max_complexity
-                .unwrap_or(mccabe::settings::DEFAULT_MAX_COMPLEXITY),
+                .unwrap_or(metric.default_max_complexity()),
+            metric,
         }
     }
 }
@@ -4481,11 +4519,13 @@ impl From<LintOptionsWire> for LintOptions {
 
 #[cfg(test)]
 mod tests {
-    use crate::options::{Flake8SelfOptions, Flake8TidyImportsOptions};
+    use crate::options::{Flake8SelfOptions, Flake8TidyImportsOptions, McCabeOptions};
     use ruff_linter::rules::flake8_self;
     use ruff_linter::rules::flake8_tidy_imports::settings::{
         AllImports, ImportSelection, ImportSelector, ImportSelectorSettings,
     };
+    use ruff_linter::rules::mccabe::settings::ComplexityMetric;
+    use ruff_linter::settings::types::PreviewMode;
     use ruff_python_ast::name::Name;
 
     #[test]
@@ -4592,5 +4632,60 @@ mod tests {
             error.to_string(),
             "`require-lazy` and `ban-lazy` must not overlap after applying exclusions"
         );
+    }
+
+    #[test]
+    fn mccabe_options_cognitive_requires_preview() {
+        let options = McCabeOptions {
+            max_complexity: None,
+            metric: Some(ComplexityMetric::Cognitive),
+        };
+        let settings = options.into_settings(PreviewMode::Disabled);
+        assert_eq!(settings.metric, ComplexityMetric::Cyclomatic);
+        assert_eq!(settings.max_complexity, 10);
+    }
+
+    #[test]
+    fn mccabe_options_cognitive_default_threshold() {
+        let options = McCabeOptions {
+            max_complexity: None,
+            metric: Some(ComplexityMetric::Cognitive),
+        };
+        let settings = options.into_settings(PreviewMode::Enabled);
+        assert_eq!(settings.metric, ComplexityMetric::Cognitive);
+        assert_eq!(settings.max_complexity, 15);
+    }
+
+    #[test]
+    fn mccabe_options_explicit_threshold() {
+        let options = McCabeOptions {
+            max_complexity: Some(7),
+            metric: Some(ComplexityMetric::Cognitive),
+        };
+        let settings = options.into_settings(PreviewMode::Enabled);
+        assert_eq!(settings.metric, ComplexityMetric::Cognitive);
+        assert_eq!(settings.max_complexity, 7);
+    }
+
+    #[test]
+    fn mccabe_options_preview_keeps_default_metric() {
+        let options = McCabeOptions {
+            max_complexity: None,
+            metric: None,
+        };
+        let settings = options.into_settings(PreviewMode::Enabled);
+        assert_eq!(settings.metric, ComplexityMetric::Cyclomatic);
+        assert_eq!(settings.max_complexity, 10);
+    }
+
+    #[test]
+    fn mccabe_options_explicit_threshold_without_preview() {
+        let options = McCabeOptions {
+            max_complexity: Some(7),
+            metric: Some(ComplexityMetric::Cognitive),
+        };
+        let settings = options.into_settings(PreviewMode::Disabled);
+        assert_eq!(settings.metric, ComplexityMetric::Cyclomatic);
+        assert_eq!(settings.max_complexity, 7);
     }
 }

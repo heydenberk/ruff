@@ -1398,6 +1398,59 @@ fn preview_disabled_prefix_empty() {
 }
 
 #[test]
+fn preview_disabled_cognitive_complexity_metric() {
+    // The cognitive metric is preview-only: without preview, the setting warns and C901 falls
+    // back to cyclomatic complexity.
+    let mut cmd = RuffCheck::default()
+        .args([
+            "--select",
+            "C901",
+            "--config",
+            r#"lint.mccabe.metric = "cognitive""#,
+            "--config",
+            "lint.mccabe.max-complexity = 0",
+            "--output-format=concise",
+        ])
+        .build();
+    assert_cmd_snapshot!(cmd.pass_stdin("def f():\n    pass\n"), @r#"
+    success: false
+    exit_code: 1
+    ----- stdout -----
+    -:1:5: C901 `f` is too complex (1 > 0)
+    Found 1 error.
+
+    ----- stderr -----
+    warning: `lint.mccabe.metric = "cognitive"` has no effect because preview is not enabled.
+    "#);
+}
+
+#[test]
+fn preview_enabled_cognitive_complexity_metric() {
+    // With preview, the cognitive metric takes effect and there is no warning.
+    let mut cmd = RuffCheck::default()
+        .args([
+            "--select",
+            "C901",
+            "--preview",
+            "--config",
+            r#"lint.mccabe.metric = "cognitive""#,
+            "--config",
+            "lint.mccabe.max-complexity = 0",
+            "--output-format=concise",
+        ])
+        .build();
+    assert_cmd_snapshot!(cmd.pass_stdin("def f(x):\n    if x:\n        pass\n"), @"
+    success: false
+    exit_code: 1
+    ----- stdout -----
+    -:1:5: complex-structure: `f` is too complex (cognitive complexity 1 > 0)
+    Found 1 error.
+
+    ----- stderr -----
+    ");
+}
+
+#[test]
 fn preview_disabled_does_not_warn_for_empty_ignore_selections() {
     // Does not warn that the selection is empty since the user is not trying to enable the rule
     let mut cmd = RuffCheck::default()

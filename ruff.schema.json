@@ -871,6 +871,21 @@
         "type": "string"
       }
     },
+    "ComplexityMetric": {
+      "description": "The complexity metric that `C901` measures.",
+      "oneOf": [
+        {
+          "description": "McCabe cyclomatic complexity, which counts the independent paths through a function.",
+          "type": "string",
+          "const": "cyclomatic"
+        },
+        {
+          "description": "SonarSource cognitive complexity, which weighs nested control flow more heavily than\nflat control flow.",
+          "type": "string",
+          "const": "cognitive"
+        }
+      ]
+    },
     "ConstantType": {
       "type": "string",
       "enum": [
@@ -2673,13 +2688,24 @@
       "type": "object",
       "properties": {
         "max-complexity": {
-          "description": "The maximum McCabe complexity to allow before triggering `C901` errors.",
+          "description": "The maximum complexity to allow before triggering `C901` errors.\n\nIf unset, defaults to 10 for cyclomatic complexity and 15 for cognitive complexity\n(see [`metric`](#lint_mccabe_metric)).",
           "type": [
             "integer",
             "null"
           ],
           "format": "uint",
           "minimum": 0
+        },
+        "metric": {
+          "description": "The complexity metric that `C901` measures.\n\n- `\"cyclomatic\"`: McCabe cyclomatic complexity, which counts the independent paths\n  through a function.\n- `\"cognitive\"`: cognitive complexity as defined by SonarSource, which weighs nested\n  control flow more heavily than flat control flow.\n\nThe `\"cognitive\"` metric is in [preview](https://docs.astral.sh/ruff/preview/) and only\ntakes effect when preview mode is enabled. Otherwise, `C901` measures cyclomatic\ncomplexity and Ruff emits a warning.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ComplexityMetric"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false

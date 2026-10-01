@@ -10,6 +10,7 @@ doc-valid-idents = [
     "NumPy",
     "SCREAMING_SNAKE_CASE",
     "SQLAlchemy",
+    "SonarSource",
     "StackOverflow",
     "PyCharm",
     "SNMPv1",

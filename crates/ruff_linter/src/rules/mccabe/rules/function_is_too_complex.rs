@@ -6,17 +6,19 @@ use crate::Violation;
 use crate::codes::Category;
 
 use crate::checkers::ast::Checker;
+use crate::rules::mccabe::cognitive_complexity::cognitive_complexity;
+use crate::rules::mccabe::settings::{ComplexityMetric, Settings};
 
 /// ## What it does
-/// Checks for functions with a high `McCabe` complexity.
+/// Checks for functions whose complexity exceeds a configurable threshold.
+///
+/// By default, this rule measures `McCabe` (cyclomatic) complexity: a measure of the
+/// complexity of the control flow graph of the function. It is calculated by adding one to
+/// the number of decision points in the function. A decision point is a place in the code
+/// where the program has a choice of two or more paths to follow. In [preview], the rule can
+/// measure cognitive complexity instead, as described below.
 ///
 /// ## Why is this bad?
-/// The `McCabe` complexity of a function is a measure of the complexity of
-/// the control flow graph of the function. It is calculated by adding
-/// one to the number of decision points in the function. A decision
-/// point is a place in the code where the program has a choice of two
-/// or more paths to follow.
-///
 /// Functions with a high complexity are hard to understand and maintain.
 ///
 /// ## Example
@@ -51,17 +53,61 @@ use crate::checkers::ast::Checker;
 ///     return STATUS_TRANSITIONS.get(status, "unknown")
 /// ```
 ///
-/// Note that this example assumes a `lint.mccabe.max-complexity` of 5 or less to trigger a
-/// diagnostic because the initial code only has a complexity of 6.
+/// Note that this example assumes a [`lint.mccabe.max-complexity`] of 5 or less to trigger a
+/// diagnostic because the initial code has a cyclomatic complexity of 6.
+///
+/// ## Cognitive complexity
+/// In [preview], setting [`lint.mccabe.metric`] to `"cognitive"` switches this rule to cognitive
+/// complexity, as defined by
+/// [SonarSource](https://www.sonarsource.com/docs/CognitiveComplexity.pdf).
+/// Cyclomatic complexity counts decision points, so five `if` statements in a row score the
+/// same as five nested inside one another. Cognitive complexity tries to measure how hard the
+/// code is to read, so nesting costs more:
+///
+/// - `if`, `for`, `while`, `except`, `match`, and conditional expressions each add one, plus
+///   one for every level of nesting they sit in. Their bodies (or, for a conditional
+///   expression, its operands) are one level deeper; the bodies of `try`, `finally`, and
+///   `with` are not.
+/// - The `elif` and `else` branches of an `if`, and the `else` clauses of `for`, `while`, and
+///   `try`, add one each, however deeply they're nested.
+/// - Each run of the same boolean operator adds one: `a and b and c` adds one, while
+///   `a and b or c` adds two.
+/// - A direct recursive call, written as a bare call to the function's own name such as
+///   `fib(n - 1)`, adds one. Calls through an attribute, like `self.visit(node)`, aren't
+///   counted, and neither is a method calling its own name directly, since inside a method
+///   that name never refers to the method itself.
+/// - Nested functions and lambdas add a level of nesting, except for a function whose
+///   enclosing function only defines and returns it, as in a decorator. A class body starts
+///   again at zero nesting, and its methods add no nesting of their own.
+/// - A `match` statement counts once, however many `case` arms it has. Comprehensions add
+///   nothing on their own.
+///
+/// For example, `normalize_status` above has a cognitive complexity of 5: five `if`
+/// statements, none of them nested.
+///
+/// Under this metric, only the outermost function is reported. The complexity of any function
+/// defined inside it, including methods of a class defined inside it, counts toward the outer
+/// function, so the same code isn't scored twice. As a result, a diagnostic on the outer
+/// function may come from code in an inner function.
+///
+/// When [`lint.mccabe.max-complexity`] is unset, the threshold is 15 under this metric,
+/// instead of 10.
 ///
 /// ## Options
 /// - `lint.mccabe.max-complexity`
+/// - `lint.mccabe.metric`
+///
+/// ## References
+/// - [SonarSource: Cognitive Complexity](https://www.sonarsource.com/docs/CognitiveComplexity.pdf)
+///
+/// [preview]: https://docs.astral.sh/ruff/preview/
 #[derive(ViolationMetadata)]
 #[violation_metadata(stable_since = "v0.0.127", category = Category::Restriction)]
 pub(crate) struct ComplexStructure {
     name: String,
     complexity: usize,
     max_complexity: usize,
+    metric: ComplexityMetric,
 }
 
 impl Violation for ComplexStructure {
@@ -71,8 +117,16 @@ impl Violation for ComplexStructure {
             name,
             complexity,
             max_complexity,
+            metric,
         } = self;
-        format!("`{name}` is too complex ({complexity} > {max_complexity})")
+        match metric {
+            ComplexityMetric::Cyclomatic => {
+                format!("`{name}` is too complex ({complexity} > {max_complexity})")
+            }
+            ComplexityMetric::Cognitive => format!(
+                "`{name}` is too complex (cognitive complexity {complexity} > {max_complexity})"
+            ),
+        }
     }
 }
 
@@ -170,15 +224,35 @@ pub(crate) fn function_is_too_complex(
     stmt: &Stmt,
     name: &str,
     body: &[Stmt],
-    max_complexity: usize,
+    settings: &Settings,
 ) {
-    let complexity = get_complexity_number(body) + 1;
-    if complexity > max_complexity {
+    let semantic = checker.semantic();
+    // A nested function's cognitive complexity counts toward the outermost enclosing
+    // function, so reporting it separately would count the same code twice. This also
+    // covers methods of a class defined inside a function.
+    if settings.metric == ComplexityMetric::Cognitive
+        && semantic
+            .current_scopes()
+            .any(|scope| scope.kind.is_function())
+    {
+        return;
+    }
+    let complexity = match settings.metric {
+        ComplexityMetric::Cyclomatic => get_complexity_number(body) + 1,
+        ComplexityMetric::Cognitive => {
+            // A bare name inside a method never refers to the method itself (the class
+            // scope is skipped during name lookup), so a method can't call itself that way.
+            let recursion_name = (!semantic.current_scope().kind.is_class()).then_some(name);
+            cognitive_complexity(recursion_name, body)
+        }
+    };
+    if complexity > settings.max_complexity {
         checker.report_diagnostic(
             ComplexStructure {
                 name: name.to_string(),
                 complexity,
-                max_complexity,
+                max_complexity: settings.max_complexity,
+                metric: settings.metric,
             },
             stmt.identifier(),
         );

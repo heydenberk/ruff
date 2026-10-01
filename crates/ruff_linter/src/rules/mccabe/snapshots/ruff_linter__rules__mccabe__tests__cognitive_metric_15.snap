@@ -1,0 +1,12 @@
+---
+source: crates/ruff_linter/src/rules/mccabe/mod.rs
+---
+C901 `handle` is too complex (cognitive complexity 17 > 15)
+  --> C901_cognitive.py:78:9
+   |
+77 | class Service:
+78 |     def handle(self, request):  # 17
+   |         ^^^^^^
+79 |         for header in request.headers:  # +1
+80 |             if header.name == "x":  # +2 (nesting = 1)
+   |

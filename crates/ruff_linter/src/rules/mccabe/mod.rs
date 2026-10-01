@@ -1,4 +1,5 @@
 //! Rules from [mccabe](https://pypi.org/project/mccabe/).
+mod cognitive_complexity;
 pub(crate) mod rules;
 pub mod settings;
 
@@ -22,7 +23,28 @@ mod tests {
         let diagnostics = test_path(
             Path::new("mccabe/C901.py"),
             &LinterSettings {
-                mccabe: super::settings::Settings { max_complexity },
+                mccabe: super::settings::Settings {
+                    max_complexity,
+                    metric: super::settings::ComplexityMetric::Cyclomatic,
+                },
+                ..LinterSettings::for_rules(vec![Rule::ComplexStructure])
+            },
+        )?;
+        assert_diagnostics!(snapshot, diagnostics);
+        Ok(())
+    }
+
+    #[test_case(0)]
+    #[test_case(15)]
+    fn cognitive_metric(max_complexity: usize) -> Result<()> {
+        let snapshot = format!("cognitive_metric_{max_complexity}");
+        let diagnostics = test_path(
+            Path::new("mccabe/C901_cognitive.py"),
+            &LinterSettings {
+                mccabe: super::settings::Settings {
+                    max_complexity,
+                    metric: super::settings::ComplexityMetric::Cognitive,
+                },
                 ..LinterSettings::for_rules(vec![Rule::ComplexStructure])
             },
         )?;

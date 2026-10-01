@@ -366,3 +366,8 @@ pub(crate) const fn is_pragma_excluded_from_import_width_enabled(preview: Previe
 pub(crate) const fn is_rule_categories_enabled(preview: PreviewMode) -> bool {
     preview.is_enabled()
 }
+
+// https://github.com/astral-sh/ruff/issues/2418
+pub const fn is_cognitive_complexity_metric_enabled(preview: PreviewMode) -> bool {
+    preview.is_enabled()
+}

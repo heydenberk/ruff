@@ -222,7 +222,7 @@ pub(crate) fn statement(stmt: &Stmt, checker: &mut Checker) {
                     stmt,
                     name,
                     body,
-                    checker.settings().mccabe.max_complexity,
+                    &checker.settings().mccabe,
                 );
             }
             if checker.is_rule_enabled(Rule::HardcodedPasswordDefault) {
